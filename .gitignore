@@ -21,3 +21,19 @@ CONTRIBUTING.md
 *~
 Thumbs.db
 Desktop.ini
+*.spec
+
+# Local tests and development tools
+/test_*.py
+/tests/
+/tools/
+/build.bat
+/啟動.bat
+/version_info.txt
+/assets/mushroom.png
+
+# Local release preparation and review notes
+/CHANGELOG.md
+/docs/
+/SHA256SUMS.txt
+/REVIEW_NOTES.md
