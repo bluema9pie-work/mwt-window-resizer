@@ -23,7 +23,7 @@ from startup import StartupState, configure_startup
 from ui import WindowUI
 
 APP_NAME = "MWT遊戲視窗調整工具"
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
@@ -1480,8 +1480,13 @@ class TrayIcon:
 class App(WindowUI, tk.Tk):
     """Main Tk UI: pick a game window, apply display modes, and poll state."""
 
-    def __init__(self, profile_path: Path | None = None, *, startup_backend=None) -> None:
+    def __init__(self, profile_path: Path | None = None, *, startup_backend=None,
+                 start_in_tray: bool = False) -> None:
         super().__init__()
+        # Withdraw before any idle/layout work can map the initial Tk window.
+        if start_in_tray:
+            self.withdraw()
+        self.app_version = APP_VERSION
         self.title(f"{APP_NAME} v{APP_VERSION}")
         # Apply the default after the UI creates its option; hide/minimize
         # temporarily clears topmost until the tool becomes visible again.
@@ -1519,7 +1524,7 @@ class App(WindowUI, tk.Tk):
         self._startup_busy = False
 
         self._build_ui()
-        self.attributes("-topmost", self.pin_window.get())
+        self.attributes("-topmost", self.pin_window.get() and not start_in_tray)
         self._refresh_profiles()
         self.refresh_windows()
         self._sync_option_states()
@@ -1527,6 +1532,8 @@ class App(WindowUI, tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self._tick()
         self._request_startup("ensure")
+        if start_in_tray:
+            self.hide_to_tray()
 
     def _on_ui_unmap(self, _event=None) -> None:
         """Stop forcing the tool above other windows while minimized/hidden."""
@@ -2241,7 +2248,7 @@ class App(WindowUI, tk.Tk):
             self._startup_retry.configure(text="更新位置")
             self._startup_retry.pack(side=tk.RIGHT, padx=(self._px(4), 0))
         else:
-            self._startup_hint.configure(text="登入 Windows 後自動開啟本程式（需管理員權限）")
+            self._startup_hint.configure(text="登入 Windows 後在系統匣啟動，不顯示主視窗（需管理員權限）")
             if operation != "query":
                 self.status_var.set("已啟用開機自動啟動，下次登入 Windows 生效" if state and state.enabled
                                     else "已關閉開機自動啟動")
@@ -2277,6 +2284,7 @@ class App(WindowUI, tk.Tk):
             )
         if not self._tray.create():
             self._tray = None
+            self.deiconify()
             messagebox.showerror("無法縮到系統匣", "通知區圖示建立失敗，工具會保持開啟。", parent=self)
             return
         self.withdraw()
@@ -2338,4 +2346,4 @@ if __name__ == "__main__":
             user32.SetProcessDPIAware()
         except Exception:
             pass
-    App().mainloop()
+    App(start_in_tray="--start-in-tray" in sys.argv[1:]).mainloop()

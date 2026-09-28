@@ -497,7 +497,7 @@ class WindowUI:
         self._label(parent, "方便一邊看遊戲、一邊調整。", style="Small.TLabel").pack(anchor=tk.W, pady=(self._px(4), self._px(12)))
         self._button(parent, "立即收到系統匣", self.hide_to_tray).pack(anchor=tk.W)
         self._divider(parent)
-        self._section(parent, "MWT  1.5")
+        self._section(parent, f"MWT  {self.app_version}")
         self._label(parent, "遊戲視窗調整工具", style="Muted.TLabel").pack(anchor=tk.W)
         self._label(parent, "F5  重新整理     Ctrl+S  儲存     Esc  返回調整", style="Small.TLabel").pack(anchor=tk.W, pady=(self._px(8), 0))
         self._label(parent, "調整視窗外框，不改變遊戲內部渲染解析度。", style="Small.TLabel").pack(anchor=tk.W, pady=(self._px(4), 0))

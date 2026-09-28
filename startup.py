@@ -29,16 +29,17 @@ class StartupCommand:
     working_directory: str
 
 
-def startup_command() -> StartupCommand:
+def startup_command(*, start_in_tray: bool = True) -> StartupCommand:
     executable = Path(sys.executable).resolve()
+    arguments = ["--start-in-tray"] if start_in_tray else []
     if getattr(sys, "frozen", False):
-        return StartupCommand(str(executable), "", str(executable.parent))
+        return StartupCommand(str(executable), subprocess.list2cmdline(arguments), str(executable.parent))
     # Source launches need a stable script path, not the invoking working directory.
     script = Path(__file__).resolve().with_name("mwt.py")
     pythonw = executable.with_name("pythonw.exe")
     if pythonw.is_file():
         executable = pythonw
-    return StartupCommand(str(executable), subprocess.list2cmdline([str(script)]), str(script.parent))
+    return StartupCommand(str(executable), subprocess.list2cmdline([str(script), *arguments]), str(script.parent))
 
 
 # All variable data comes from stdin JSON, never from interpolated PowerShell.
@@ -70,7 +71,23 @@ try {
         throw 'A task with this name is not owned by MWT; no changes were made.'
     }
     # A disabled task records the user's opt-out across future launches.
-    # ensure initializes missing settings without rewriting an existing task.
+    # Migrate only our legacy command at this location, preserving opt-out and
+    # every other task setting. Never redirect a task for another installation.
+    if ($request.operation -eq 'ensure' -and $null -ne $task) {
+        $definition = $task.Definition
+        if ($definition.Actions.Count -eq 1 -and
+            (Test-CurrentUser $definition.Principal.UserId)) {
+            $action = $definition.Actions.Item(1)
+            if ($action.Type -eq 0 -and $action.Path -ieq $request.executable -and
+                $action.WorkingDirectory -ieq $request.working_directory -and
+                [string]$action.Arguments -ceq [string]$request.legacy_arguments -and
+                [string]$action.Arguments -cne [string]$request.arguments) {
+                $definition.Settings.Enabled = [bool]$task.Enabled
+                $action.Arguments = $request.arguments
+                $task = $folder.RegisterTaskDefinition($name, $definition, 4, $sid, $null, 3, $null)
+            }
+        }
+    }
     $createDefault = ($null -eq $task -and $request.operation -in @('ensure', 'disable'))
     if ($request.operation -eq 'enable' -or $createDefault) {
         if (-not (Test-Path -LiteralPath $request.executable -PathType Leaf)) {
@@ -121,7 +138,7 @@ try {
                 $definition.Principal.LogonType -eq 3 -and $definition.Principal.RunLevel -eq 1 -and
                 $action.Path -ieq $request.executable -and
                 # Task Scheduler may return null for an omitted Arguments element.
-                # Both null and an empty string mean no arguments (packaged MWT).
+                # Compare missing/empty arguments consistently for legacy tasks.
                 [string]$action.Arguments -ceq [string]$request.arguments -and
                 $action.WorkingDirectory -ieq $request.working_directory)
         }
@@ -138,14 +155,16 @@ try {
 def configure_startup(operation: str = "query") -> StartupState:
     """Manage only MWT's current-user task; never run it now.
 
-    ensure defaults to enabled only when no task exists. disable retains a
+    ensure defaults to enabled only when no task exists, and migrates a legacy
+    command at the same location to tray startup without enabling it. disable retains a
     disabled task so future launches respect the user's choice; remove forgets
     that choice and is reserved for explicit cleanup/uninstall.
     """
     if operation not in ("query", "ensure", "enable", "disable", "remove"):
         raise ValueError("不支援的自動啟動操作")
     command = startup_command()
-    payload = {"operation": operation, **command.__dict__}
+    payload = {"operation": operation, **command.__dict__,
+               "legacy_arguments": startup_command(start_in_tray=False).arguments}
     powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     encoded = base64.b64encode(_SCRIPT.encode("utf-16-le")).decode("ascii")
     try:
